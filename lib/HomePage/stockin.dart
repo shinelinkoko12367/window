@@ -1,12 +1,13 @@
-import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
-import 'dart:typed_data';
-
+import 'dart:io';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:serial_port_win32/serial_port_win32.dart';
+import 'package:webproject/HomePage/listPage.dart';
 import 'package:webproject/constant/constant.dart';
+
 import 'package:camera_platform_interface/camera_platform_interface.dart';
 
 class StockIn extends StatefulWidget {
@@ -36,26 +37,24 @@ class _StockInState extends State<StockIn> {
   String? allport;
   String? allport1;
   String? allport2;
-  String data = '';
-  String data1 = '';
-  String data2 = '';
-  String? portName;
   final List<String> allports = [];
-  final List<String> alldata = [];
 
   String _cameraInfo = 'Unknown';
   List<CameraDescription> _cameras = <CameraDescription>[];
+  List<String> _camerasList = ["Select Camera"];
   int _cameraIndex = 0;
   int _cameraId = -1;
   bool _initialized = false;
-  bool _recording = false;
-  bool _recordingTimed = false;
-  bool _recordAudio = true;
-  bool _previewPaused = false;
+  bool _recordAudio = false;
   Size? _previewSize;
   ResolutionPreset _resolutionPreset = ResolutionPreset.veryHigh;
   StreamSubscription<CameraErrorEvent>? _errorStreamSubscription;
   StreamSubscription<CameraClosingEvent>? _cameraClosingStreamSubscription;
+
+  int _cameraIndex2 = 0;
+  int _cameraId2 = -1;
+  bool _initialized2 = false;
+  Size? _previewSize2;
 
   String getStringFromBytes(ByteData data) {
     final buffer = data.buffer;
@@ -66,98 +65,42 @@ class _StockInState extends State<StockIn> {
   void _getPortsAndOpen() {
     final List<PortInfo> portInfoLists = SerialPort.getPortsWithFullMessages();
     ports = SerialPort.getAvailablePorts();
-    // log(portInfoLists.first.friendlyName.toString());
 
+    // print(portInfoLists);
+    allports.clear();
     ports.forEach((element) {
-      allports.add(element.toString());
+      allports.add(element);
     });
+    print(allports);
+
+    setState(() {});
   }
 
-  void getData(String name) {
-    // if (ports.isNotEmpty) {
-    print(name);
-
-    port = SerialPort(name,
+  List<String> getdatalist = [];
+  void getData(String post) async {
+    final port = SerialPort(post,
         openNow: false, ReadIntervalTimeout: 1, ReadTotalTimeoutConstant: 2);
-    // if (port.isOpened) {
-    //   port.close();
-    // }
-    port.open();
-    port.readBytesOnListen(16, (value) {
-      // alldata.addAll([
-      //   String.fromCharCode(int.parse(value.toString()) ?? 11),
-      //   value.toString(),
-      //   utf8.decode(value).toString()
-      // ]);
-      print(value.toString());
-      print(utf8.decode(value).toString());
-      setState(() {
-        alldata.add("${value.toString()} ${utf8.decode(value).toString()}");
+    try {
+      port.open();
+      port.readBytesOnListen(16, (Uint8List value) {
+        log(value.toString());
+        setState(() {
+          getdatalist.add("data 1 : $value");
+        });
       });
-
-      // print(String.fromCharCode(value));
-      log(alldata.toString());
-    });
-    log(alldata.toString());
-    // port.close();
-    // }
-  }
-
-  @override
-  void dispose() {
-    // TODO: implement dispose
-    _disposeCurrentCamera();
-    _errorStreamSubscription?.cancel();
-    _errorStreamSubscription = null;
-    _cameraClosingStreamSubscription?.cancel();
-    _cameraClosingStreamSubscription = null;
-    port.close();
-    super.dispose();
-  }
-
-  Future<void> _disposeCurrentCamera() async {
-    if (_cameraId >= 0 && _initialized) {
-      try {
-        await CameraPlatform.instance.dispose(_cameraId);
-
-        if (mounted) {
-          setState(() {
-            _initialized = false;
-            _cameraId = -1;
-            _previewSize = null;
-            _recording = false;
-            _recordingTimed = false;
-            _previewPaused = false;
-            _cameraInfo = 'Camera disposed';
-          });
-        }
-      } on CameraException catch (e) {
-        if (mounted) {
-          setState(() {
-            _cameraInfo =
-                'Failed to dispose camera: ${e.code}: ${e.description}';
-          });
-        }
-      }
+      log(getdatalist.toString());
+    } catch (e) {
+      print("Error: $e");
+    } finally {
+      // port.close();
     }
-  }
-
-  void _send() async {
-    // print(sendData);
-    // print(port.writeBytesFromString("AT"));
-    // print(await port.readBytesUntil(Uint8List.fromList("\n".codeUnits)));
-    log(port.writeBytesFromString("AT").toString());
-    log(await port
-        .readBytesUntil(Uint8List.fromList("\n".codeUnits))
-        .toString());
-    // var data = await port.readBytesOnce(10);
-    // print(data);
   }
 
   @override
   void initState() {
     super.initState();
     WidgetsFlutterBinding.ensureInitialized();
+
     _fetchCameras();
     _getPortsAndOpen();
   }
@@ -184,44 +127,43 @@ class _StockInState extends State<StockIn> {
         _cameraIndex = cameraIndex;
         _cameras = cameras;
         _cameraInfo = cameraInfo;
+        // _initialized=true;
+        _camerasList.addAll(_cameras.map((e) => e.name).toList());
       });
+      // _initializeCamera();
     }
   }
 
-  Widget _buildPreview() {
-    return CameraPlatform.instance.buildPreview(_cameraId);
+  @override
+  void dispose() {
+    _disposeCurrentCamera();
+    _errorStreamSubscription?.cancel();
+    _errorStreamSubscription = null;
+    _cameraClosingStreamSubscription?.cancel();
+    _cameraClosingStreamSubscription = null;
+    super.dispose();
   }
 
-  Future<void> _takePicture() async {
-    final XFile file = await CameraPlatform.instance.takePicture(_cameraId);
-    log('Picture captured to: ${file.path}');
-    _showInSnackBar('Picture captured to: ${file.path}');
-  }
+  Future<void> _disposeCurrentCamera() async {
+    if (_cameraId >= 0 && _initialized) {
+      try {
+        await CameraPlatform.instance.dispose(_cameraId);
 
-  Future<void> _recordTimed(int seconds) async {
-    if (_initialized && _cameraId > 0 && !_recordingTimed) {
-      unawaited(CameraPlatform.instance
-          .onVideoRecordedEvent(_cameraId)
-          .first
-          .then((VideoRecordedEvent event) async {
         if (mounted) {
           setState(() {
-            _recordingTimed = false;
+            _initialized = false;
+            _cameraId = -1;
+            _previewSize = null;
+            _cameraInfo = 'Camera disposed';
           });
-
-          _showInSnackBar('Video captured to: ${event.file.path}');
         }
-      }));
-
-      await CameraPlatform.instance.startVideoRecording(
-        _cameraId,
-        maxVideoDuration: Duration(seconds: seconds),
-      );
-
-      if (mounted) {
-        setState(() {
-          _recordingTimed = true;
-        });
+      } on CameraException catch (e) {
+        if (mounted) {
+          setState(() {
+            _cameraInfo =
+                'Failed to dispose camera: ${e.code}: ${e.description}';
+          });
+        }
       }
     }
   }
@@ -291,8 +233,6 @@ class _StockInState extends State<StockIn> {
           _cameraId = -1;
           _cameraIndex = 0;
           _previewSize = null;
-          _recording = false;
-          _recordingTimed = false;
           _cameraInfo =
               'Failed to initialize camera: ${e.code}: ${e.description}';
         });
@@ -300,89 +240,80 @@ class _StockInState extends State<StockIn> {
     }
   }
 
-  Future<void> _toggleRecord() async {
-    if (_initialized && _cameraId > 0) {
-      if (_recordingTimed) {
-        /// Request to stop timed recording short.
-        await CameraPlatform.instance.stopVideoRecording(_cameraId);
-      } else {
-        if (!_recording) {
-          await CameraPlatform.instance.startVideoRecording(_cameraId);
-        } else {
-          final XFile file =
-              await CameraPlatform.instance.stopVideoRecording(_cameraId);
+  Future<void> _initializeCamera2() async {
+    assert(!_initialized2);
 
-          _showInSnackBar('Video captured to: ${file.path}');
-        }
-
-        if (mounted) {
-          setState(() {
-            _recording = !_recording;
-          });
-        }
-      }
+    if (_cameras.isEmpty) {
+      return;
     }
-  }
 
-  Future<void> _togglePreview() async {
-    if (_initialized && _cameraId >= 0) {
-      if (!_previewPaused) {
-        await CameraPlatform.instance.pausePreview(_cameraId);
-      } else {
-        await CameraPlatform.instance.resumePreview(_cameraId);
-      }
+    int cameraId = -1;
+    try {
+      final int cameraIndex = _cameraIndex2 % _cameras.length;
+      final CameraDescription camera = _cameras[cameraIndex];
+
+      cameraId = await CameraPlatform.instance.createCamera(
+        camera,
+        _resolutionPreset,
+        enableAudio: _recordAudio,
+      );
+
+      unawaited(_errorStreamSubscription?.cancel());
+      _errorStreamSubscription = CameraPlatform.instance
+          .onCameraError(cameraId)
+          .listen(_onCameraError);
+
+      unawaited(_cameraClosingStreamSubscription?.cancel());
+      _cameraClosingStreamSubscription = CameraPlatform.instance
+          .onCameraClosing(cameraId)
+          .listen(_onCameraClosing);
+
+      final Future<CameraInitializedEvent> initialized =
+          CameraPlatform.instance.onCameraInitialized(cameraId).first;
+
+      await CameraPlatform.instance.initializeCamera(
+        cameraId,
+      );
+
+      final CameraInitializedEvent event = await initialized;
+      _previewSize2 = Size(
+        event.previewWidth,
+        event.previewHeight,
+      );
+
       if (mounted) {
         setState(() {
-          _previewPaused = !_previewPaused;
+          _initialized2 = true;
+          _cameraId2 = cameraId;
+          _cameraIndex2 = cameraIndex;
+          _cameraInfo = 'Capturing camera: ${camera.name}';
+        });
+      }
+    } on CameraException catch (e) {
+      try {
+        if (cameraId >= 0) {
+          await CameraPlatform.instance.dispose(cameraId);
+        }
+      } on CameraException catch (e) {
+        debugPrint('Failed to dispose camera: ${e.code}: ${e.description}');
+      }
+
+      // Reset state.
+      if (mounted) {
+        setState(() {
+          _initialized2 = false;
+          _cameraId2 = -1;
+          _cameraIndex2 = 0;
+          _previewSize2 = null;
+          _cameraInfo =
+              'Failed to initialize camera: ${e.code}: ${e.description}';
         });
       }
     }
   }
 
-  Future<void> _switchCamera() async {
-    if (_cameras.isNotEmpty) {
-      // select next index;
-      _cameraIndex = (_cameraIndex + 1) % _cameras.length;
-      if (_initialized && _cameraId >= 0) {
-        await _disposeCurrentCamera();
-        await _fetchCameras();
-        if (_cameras.isNotEmpty) {
-          await _initializeCamera();
-        }
-      } else {
-        await _fetchCameras();
-      }
-    }
-  }
-
-  Future<void> _onResolutionChange(ResolutionPreset newValue) async {
-    setState(() {
-      _resolutionPreset = newValue;
-    });
-    if (_initialized && _cameraId >= 0) {
-      // Re-inits camera with new resolution preset.
-      await _disposeCurrentCamera();
-      await _initializeCamera();
-    }
-  }
-
-  Future<void> _onAudioChange(bool recordAudio) async {
-    setState(() {
-      _recordAudio = recordAudio;
-    });
-    if (_initialized && _cameraId >= 0) {
-      // Re-inits camera with new record audio setting.
-      await _disposeCurrentCamera();
-      await _initializeCamera();
-    }
-  }
-
   void _onCameraError(CameraErrorEvent event) {
     if (mounted) {
-      _scaffoldMessengerKey.currentState?.showSnackBar(
-          SnackBar(content: Text('Error: ${event.description}')));
-
-      // Dispose camera on camera error as it can not be used anymore.
       _disposeCurrentCamera();
       _fetchCameras();
     }
@@ -390,168 +321,284 @@ class _StockInState extends State<StockIn> {
 
   void _onCameraClosing(CameraClosingEvent event) {
     if (mounted) {
-      _showInSnackBar('Camera is closing');
+      // _showInSnackBar('Camera is closing');
     }
   }
 
-  void _showInSnackBar(String message) {
-    _scaffoldMessengerKey.currentState?.showSnackBar(SnackBar(
-      content: Text(message),
-      duration: const Duration(seconds: 1),
-    ));
+  Widget _buildPreview() {
+    return CameraPlatform.instance.buildPreview(_cameraId);
   }
 
-  final GlobalKey<ScaffoldMessengerState> _scaffoldMessengerKey =
-      GlobalKey<ScaffoldMessengerState>();
+  String? _capturedImagePath;
+  Future<void> _takePicture() async {
+    final XFile file = await CameraPlatform.instance.takePicture(_cameraId);
+    setState(() {
+      _capturedImagePath = file.path;
+    });
+  }
+
+  Future<void> _removePicture() async {
+    setState(() {
+      _capturedImagePath = null;
+    });
+  }
+
+  Widget _buildPreview2() {
+    return CameraPlatform.instance.buildPreview(_cameraId2);
+  }
 
   @override
   Widget build(BuildContext context) {
     var size = MediaQuery.of(context).size;
-
-    final List<DropdownMenuItem<ResolutionPreset>> resolutionItems =
-        ResolutionPreset.values
-            .map<DropdownMenuItem<ResolutionPreset>>((ResolutionPreset value) {
-      return DropdownMenuItem<ResolutionPreset>(
-        value: value,
-        child: Text(value.toString()),
-      );
-    }).toList();
-
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        backgroundColor: fillColor,
+        iconTheme: IconThemeData(color: Colors.black),
         elevation: 0,
+        backgroundColor: Colors.white,
       ),
-      body: ListView(
-        children: <Widget>[
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              vertical: 5,
-              horizontal: 10,
-            ),
-            child: Text(_cameraInfo),
+      body: SafeArea(
+          child: Row(
+        children: [
+          Column(
+            children: [maincamrea(size), container(size)],
           ),
-          if (_cameras.isEmpty)
-            ElevatedButton(
-              onPressed: _fetchCameras,
-              child: const Text('Re-check available cameras'),
-            ),
-          if (_cameras.isNotEmpty)
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: <Widget>[
-                DropdownButton<ResolutionPreset>(
-                  value: _resolutionPreset,
-                  onChanged: (ResolutionPreset? value) {
-                    if (value != null) {
-                      _onResolutionChange(value);
-                    }
-                  },
-                  items: resolutionItems,
+          Column(
+            children: [buttoncontainer(size)],
+          ),
+        ],
+      )),
+    );
+  }
+
+  Container maincamrea(Size size) {
+    return Container(
+      width: size.width * 0.70,
+      height: size.height * 0.5,
+      margin: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Stack(
+            children: [
+              Container(
+                width: size.width * 0.25,
+                height: size.height * 0.5,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(20),
+                  color: mainColor,
                 ),
-                const SizedBox(width: 20),
-                const Text('Audio:'),
-                Switch(
-                    value: _recordAudio,
-                    onChanged: (bool state) => _onAudioChange(state)),
-                const SizedBox(width: 20),
-                ElevatedButton(
-                  onPressed:
-                      _initialized ? _disposeCurrentCamera : _initializeCamera,
-                  child:
-                      Text(_initialized ? 'Dispose camera' : 'Create camera'),
-                ),
-                const SizedBox(width: 5),
-                ElevatedButton(
-                  onPressed: _initialized ? _takePicture : null,
-                  child: const Text('Take picture'),
-                ),
-                const SizedBox(width: 5),
-                ElevatedButton(
-                  onPressed: _initialized ? _togglePreview : null,
-                  child: Text(
-                    _previewPaused ? 'Resume preview' : 'Pause preview',
-                  ),
-                ),
-                const SizedBox(width: 5),
-                ElevatedButton(
-                  onPressed: _initialized ? _toggleRecord : null,
-                  child: Text(
-                    (_recording || _recordingTimed)
-                        ? 'Stop recording'
-                        : 'Record Video',
-                  ),
-                ),
-                const SizedBox(width: 5),
-                ElevatedButton(
-                  onPressed: (_initialized && !_recording && !_recordingTimed)
-                      ? () => _recordTimed(5)
-                      : null,
-                  child: const Text(
-                    'Record 5 seconds',
-                  ),
-                ),
-                if (_cameras.length > 1) ...<Widget>[
-                  const SizedBox(width: 5),
-                  ElevatedButton(
-                    onPressed: _switchCamera,
-                    child: const Text(
-                      'Switch camera',
+                child: _initialized && _cameraId > 0 && _previewSize != null
+                    ? Padding(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 10,
+                        ),
+                        child: Align(
+                            child: Container(
+                          constraints: BoxConstraints(
+                              // maxHeight: size.height*0.5,
+                              // minHeight: size.height*0.5,
+                              ),
+                          child: AspectRatio(
+                            // aspectRatio: _previewSize!.width / _previewSize!.height,
+                            aspectRatio: 4 / 3,
+                            child: _buildPreview(),
+                          ),
+                        )))
+                    : Center(
+                        child: Text(
+                          "Main Camera",
+                          style: TextStyle(fontSize: 20, color: Colors.white),
+                        ),
+                      ),
+              ),
+              Positioned(
+                top: size.height * 0,
+                right: size.width * 0,
+                child: Container(
+                  height: 30,
+                  width: 150,
+                  decoration: BoxDecoration(
+                      color: fillColor,
+                      borderRadius:
+                          BorderRadius.only(topRight: Radius.circular(20))),
+                  padding: EdgeInsets.symmetric(horizontal: 5),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: _camerasList[0],
+                      isExpanded: true,
+                      hint: Text(
+                        'Choose Port',
+                        style: TextStyle(
+                            fontSize: 14, color: Colors.grey.shade500),
+                      ),
+                      elevation: 0,
+                      icon: const Icon(
+                        Icons.arrow_drop_down,
+                        color: Colors.black54,
+                      ),
+                      dropdownColor: Colors.white,
+                      items: _camerasList
+                          .map<DropdownMenuItem<String>>((String value) {
+                        return DropdownMenuItem<String>(
+                          value: value,
+                          child: Text(value),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        int ind = _camerasList.indexOf(value ?? "");
+                        if (ind > 0) {
+                          setState(() {
+                            _cameraIndex = ind - 1;
+                          });
+                          _initializeCamera();
+                        }
+
+                        print(value);
+                      },
                     ),
                   ),
-                ]
-              ],
-            ),
-          const SizedBox(height: 5),
-          if (_initialized && _cameraId > 0 && _previewSize != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(
-                vertical: 10,
-              ),
-              child: Align(
-                child: Container(
-                  constraints: const BoxConstraints(
-                    maxHeight: 500,
-                  ),
-                  child: AspectRatio(
-                    aspectRatio: _previewSize!.width / _previewSize!.height,
-                    child: _buildPreview(),
-                  ),
                 ),
               ),
+            ],
+          ),
+          SizedBox(width: 5),
+          Container(
+            child: Column(
+              // crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.start,
+              children: [
+                Stack(
+                  children: [
+                    Container(
+                      width: size.width * 0.18,
+                      height: size.height * 0.245,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(20),
+                        color: mainColor,
+                      ),
+                      child: _initialized2 &&
+                              _cameraId2 > 0 &&
+                              _previewSize2 != null
+                          ? Padding(
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 10,
+                              ),
+                              child: Align(
+                                  child: Container(
+                                constraints: BoxConstraints(
+                                  maxHeight: size.height * 0.5,
+                                  minHeight: size.height * 0.5,
+                                ),
+                                child: AspectRatio(
+                                  aspectRatio: _previewSize2!.width /
+                                      _previewSize2!.height,
+                                  // aspectRatio: 4/3,
+                                  child: _buildPreview2(),
+                                ),
+                              )))
+                          : Center(
+                              child: Text(
+                              "Selfie Camera",
+                              style:
+                                  TextStyle(fontSize: 16, color: Colors.white),
+                            )),
+                    ),
+                    Positioned(
+                      top: 0,
+                      right: 0,
+                      child: Container(
+                        height: 30,
+                        width: 150,
+                        decoration: BoxDecoration(
+                            color: fillColor,
+                            borderRadius: BorderRadius.only(
+                                topRight: Radius.circular(20))),
+                        padding: EdgeInsets.symmetric(horizontal: 5),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: _camerasList.first,
+                            isExpanded: true,
+                            hint: Text(
+                              'Choose Port',
+                              style: TextStyle(
+                                  fontSize: 14, color: Colors.grey.shade500),
+                            ),
+                            elevation: 0,
+                            iconSize: 25,
+                            icon: const Icon(
+                              Icons.arrow_drop_down,
+                              color: Colors.black54,
+                            ),
+                            dropdownColor: Colors.white,
+                            items: _camerasList
+                                .map<DropdownMenuItem<String>>((String value) {
+                              return DropdownMenuItem<String>(
+                                value: value,
+                                child: Text(value),
+                              );
+                            }).toList(),
+                            onChanged: (value) {
+                              int ind = _camerasList.indexOf(value ?? "");
+                              if (ind > 0) {
+                                setState(() {
+                                  _cameraIndex2 = ind - 1;
+                                });
+                                _initializeCamera2();
+                              }
+
+                              print(value);
+                            },
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 5),
+                Stack(
+                  children: [
+                    Container(
+                        width: size.width * 0.18,
+                        height: size.height * 0.245,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(20),
+                          color: mainColor,
+                        ),
+                        child: _capturedImagePath != null
+                            ? Image.file(
+                                File(_capturedImagePath!),
+                                fit: BoxFit.cover,
+                              )
+                            : Container(
+                                child: Center(
+                                  child: Text(
+                                    "Item Image",
+                                    style: TextStyle(
+                                        fontSize: 16, color: Colors.white),
+                                  ),
+                                ),
+                              )
+                        // child:Image.file(File(_capturedImagePath!)),
+                        //  Center(child: Text("Item Image",
+                        // style: TextStyle(fontSize: 16,color: Colors.white),
+                        // )),
+                        ),
+                  ],
+                ),
+              ],
             ),
-          if (_previewSize != null)
-            Center(
-              child: Text(
-                'Preview size: ${_previewSize!.width.toStringAsFixed(0)}x${_previewSize!.height.toStringAsFixed(0)}',
-              ),
-            ),
+          ),
+          SizedBox(width: 5),
+          informationcontainer(size),
         ],
       ),
-      // body: SafeArea(
-      //     child: Row(
-      //   children: [
-      //     Column(
-      //       children: [
-
-      //         // cameracontainer(size),
-      //         // SizedBox(
-      //         //   height: 10,
-      //         // ),
-      //         // checkcontainer(size)
-      //       ],
-      //     ),
-      //     Column(
-      //       children: [buttoncontainer(size)],
-      //     )
-      //   ],
-      // )),
     );
   }
 
   Container buttoncontainer(Size size) {
     return Container(
-      margin: EdgeInsets.symmetric(vertical: 10, horizontal: 5),
+      margin: EdgeInsets.symmetric(vertical: 10, horizontal: 10),
       width: size.width * 0.19,
       height: size.height * 0.85,
       // color: Colors.indigo,
@@ -560,7 +607,7 @@ class _StockInState extends State<StockIn> {
           children: [
             Container(
               width: size.width * 0.185,
-              height: size.width * 0.05,
+              height: size.height * 0.085,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(10),
                 color: fillColor,
@@ -580,17 +627,17 @@ class _StockInState extends State<StockIn> {
               children: [
                 Container(
                   width: size.width * 0.09,
-                  height: size.width * 0.05,
+                  height: size.height * 0.085,
                   padding: EdgeInsets.symmetric(horizontal: 5),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(10),
                     color: fillColor,
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.5),
-                        spreadRadius: 1,
-                        blurRadius: 3,
-                        offset: Offset(0, 3),
+                        color: Colors.black.withOpacity(0.5), // Shadow color
+                        spreadRadius: 1, // Spread radius
+                        blurRadius: 3, // Blur radius
+                        offset: Offset(0, 3), // Offset in (x, y) direction
                       ),
                     ],
                   ),
@@ -603,16 +650,16 @@ class _StockInState extends State<StockIn> {
                 ),
                 Container(
                   width: size.width * 0.09,
-                  height: size.width * 0.05,
+                  height: size.height * 0.085,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(10),
                     color: fillColor,
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.5),
-                        spreadRadius: 1,
-                        blurRadius: 3,
-                        offset: Offset(0, 3),
+                        color: Colors.black.withOpacity(0.5), // Shadow color
+                        spreadRadius: 1, // Spread radius
+                        blurRadius: 3, // Blur radius
+                        offset: Offset(0, 3), // Offset in (x, y) direction
                       ),
                     ],
                   ),
@@ -631,48 +678,56 @@ class _StockInState extends State<StockIn> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Container(
-                  width: size.width * 0.09,
-                  height: size.width * 0.05,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(10),
-                    color: fillColor,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.5),
-                        spreadRadius: 1,
-                        blurRadius: 3,
-                        offset: Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text("Re-Scan"),
-                    ],
+                InkWell(
+                  onTap: () {
+                    _removePicture();
+                  },
+                  child: Container(
+                    width: size.width * 0.09,
+                    height: size.height * 0.085,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(10),
+                      color: fillColor,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.5), // Shadow color
+                          spreadRadius: 1, // Spread radius
+                          blurRadius: 3, // Blur radius
+                          offset: Offset(0, 3), // Offset in (x, y) direction
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text("Re-Scan"),
+                      ],
+                    ),
                   ),
                 ),
-                Container(
-                  width: size.width * 0.09,
-                  height: size.width * 0.05,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(10),
-                    color: fillColor,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.5),
-                        spreadRadius: 1,
-                        blurRadius: 3,
-                        offset: Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text("Scan"),
-                    ],
+                InkWell(
+                  onTap: _initialized ? _takePicture : null,
+                  child: Container(
+                    width: size.width * 0.09,
+                    height: size.height * 0.085,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(10),
+                      color: fillColor,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.5), // Shadow color
+                          spreadRadius: 1, // Spread radius
+                          blurRadius: 3, // Blur radius
+                          offset: Offset(0, 3), // Offset in (x, y) direction
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text("Scan"),
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -685,7 +740,7 @@ class _StockInState extends State<StockIn> {
               children: [
                 Container(
                   width: size.width * 0.09,
-                  height: size.width * 0.05,
+                  height: size.height * 0.085,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(10),
                     color: fillColor,
@@ -707,7 +762,7 @@ class _StockInState extends State<StockIn> {
                 ),
                 Container(
                   width: size.width * 0.09,
-                  height: size.width * 0.05,
+                  height: size.height * 0.085,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(10),
                     color: fillColor,
@@ -735,16 +790,16 @@ class _StockInState extends State<StockIn> {
               children: [
                 Container(
                   width: size.width * 0.09,
-                  height: size.width * 0.05,
+                  height: size.height * 0.085,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(10),
                     color: fillColor,
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.5),
-                        spreadRadius: 1,
-                        blurRadius: 3,
-                        offset: Offset(0, 3),
+                        color: Colors.black.withOpacity(0.5), // Shadow color
+                        spreadRadius: 1, // Spread radius
+                        blurRadius: 3, // Blur radius
+                        offset: Offset(0, 3), // Offset in (x, y) direction
                       ),
                     ],
                   ),
@@ -757,7 +812,7 @@ class _StockInState extends State<StockIn> {
                 ),
                 Container(
                   width: size.width * 0.09,
-                  height: size.width * 0.05,
+                  height: size.height * 0.085,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(10),
                     color: fillColor,
@@ -783,26 +838,46 @@ class _StockInState extends State<StockIn> {
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                Container(
-                  width: size.width * 0.09,
-                  height: size.width * 0.05,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(10),
-                    color: fillColor,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.5),
-                        spreadRadius: 1,
-                        blurRadius: 3,
-                        offset: Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text("Finished"),
-                    ],
+                InkWell(
+                  onTap: () {
+                    // Navigator.push(
+                    //   context,
+                    //   MaterialPageRoute(
+                    //     builder: (context) => ListPage(
+                    //         // _kgController.text,
+                    //         // _gController.text,
+                    //         // _widthController.text,
+                    //         // _lengthController.text,
+                    //         // _heightController.text,
+                    //         // _cubitController.text,
+
+                    //         // imageUrl: _capturedImagePath ?? 'default_image_path.png', // Use a default value
+                    //         //  text: 'Here is some text to display on the next page.',
+                    //         ),
+                    //   ),
+                    // );
+                  },
+                  child: Container(
+                    width: size.width * 0.09,
+                    height: size.height * 0.085,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(10),
+                      color: fillColor,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.5),
+                          spreadRadius: 1,
+                          blurRadius: 3,
+                          offset: Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text("Finished"),
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -815,7 +890,7 @@ class _StockInState extends State<StockIn> {
               children: [
                 Container(
                   width: size.width * 0.09,
-                  height: size.width * 0.05,
+                  height: size.height * 0.085,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(10),
                     color: fillColor,
@@ -837,7 +912,7 @@ class _StockInState extends State<StockIn> {
                 ),
                 Container(
                   width: size.width * 0.09,
-                  height: size.width * 0.05,
+                  height: size.height * 0.085,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(10),
                     color: fillColor,
@@ -865,114 +940,10 @@ class _StockInState extends State<StockIn> {
     );
   }
 
-  Container checkcontainer(Size size) {
+  Container informationcontainer(Size size) {
     return Container(
-      margin: EdgeInsets.symmetric(horizontal: 10),
-      width: size.width * 0.75,
-      height: size.height * 0.5,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.start,
+      child: Stack(
         children: [
-          Container(
-            width: size.width * 0.4,
-            height: size.height * 0.5,
-            padding: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20), color: seconColor),
-            child: SingleChildScrollView(
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      Checkbox(
-                        activeColor: mainColor,
-                        checkColor: Colors.white,
-                        value: _isChecked,
-                        onChanged: (newValue) {
-                          setState(() {
-                            _isChecked = newValue!;
-                          });
-                        },
-                      ),
-                      Container(
-                          width: size.width * 0.3,
-                          height: size.height * 0.03,
-                          padding: EdgeInsets.symmetric(horizontal: 10),
-                          color: Colors.white,
-                          child: Text("Data"))
-                    ],
-                  ),
-                  SizedBox(height: 1),
-                  Row(
-                    children: [
-                      Checkbox(
-                        activeColor: mainColor,
-                        checkColor: Colors.white,
-                        value: _isChecked1,
-                        onChanged: (newValue) {
-                          setState(() {
-                            _isChecked1 = newValue!;
-                          });
-                        },
-                      ),
-                      Container(
-                          width: size.width * 0.3,
-                          height: size.height * 0.03,
-                          padding: EdgeInsets.symmetric(horizontal: 10),
-                          color: Colors.white,
-                          child: Text("Data1"))
-                    ],
-                  ),
-                  SizedBox(height: 1),
-                  Row(
-                    children: [
-                      Checkbox(
-                        activeColor: mainColor,
-                        checkColor: Colors.white,
-                        value: _isChecked2,
-                        onChanged: (newValue) {
-                          setState(() {
-                            _isChecked2 = newValue!;
-                          });
-                        },
-                      ),
-                      Container(
-                          width: size.width * 0.3,
-                          height: size.height * 0.03,
-                          padding: EdgeInsets.symmetric(horizontal: 10),
-                          color: Colors.white,
-                          child: Text("Data2"))
-                    ],
-                  ),
-                  SizedBox(height: 1),
-                  Row(
-                    children: [
-                      Checkbox(
-                        activeColor: mainColor,
-                        checkColor: Colors.white,
-                        value: _isChecked3,
-                        onChanged: (newValue) {
-                          setState(() {
-                            _isChecked3 = newValue!;
-                          });
-                        },
-                      ),
-                      Container(
-                          width: size.width * 0.3,
-                          height: size.height * 0.03,
-                          padding: EdgeInsets.symmetric(horizontal: 10),
-                          color: Colors.white,
-                          child: Text("Data3"))
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-          SizedBox(
-            width: 10,
-          ),
-
           Container(
             width: size.width * 0.25,
             height: size.height * 0.5,
@@ -981,452 +952,369 @@ class _StockInState extends State<StockIn> {
               borderRadius: BorderRadius.circular(20),
               color: mainColor,
             ),
-            child: SingleChildScrollView(
-              child: Stack(
-                children: [
-                  Container(
-                    width: size.width * 0.24,
-                    height: size.height * 0.3,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(20),
-                      color: mainColor,
-                    ),
-                    child: alldata.length > 0
-                        ? ListView.builder(
-                            itemCount: alldata.length,
-                            itemBuilder: (context, index) {
-                              return ListTile(
-                                title: Text(alldata[index]),
-                              );
-                            },
-                          )
-                        : Center(
-                            child: Text(
-                              "Data List",
-                              style:
-                                  TextStyle(fontSize: 20, color: Colors.white),
-                            ),
-                          ),
-                  ),
-                  Positioned(
-                    top: 0,
-                    right: 0,
-                    child: Container(
-                      height: 30,
-                      width: 120,
-                      decoration: BoxDecoration(
-                          color: fillColor,
-                          borderRadius:
-                              BorderRadius.only(topRight: Radius.circular(20))),
-                      padding: EdgeInsets.symmetric(horizontal: 5),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          value: allport1,
-                          isExpanded: true,
-                          hint: Text(
-                            'Choose Port',
-                            style: TextStyle(
-                                fontSize: 14, color: Colors.grey.shade500),
-                          ),
-                          elevation: 0,
-                          iconSize: 25,
-                          icon: const Icon(
-                            Icons.arrow_drop_down,
-                            color: Colors.black54,
-                          ),
-                          dropdownColor: Colors.white,
-                          items: allports.map(allserialports).toList(),
-                          onChanged: (value) {
-                            setState(() {
-                              allport1 = value;
-                              getData(value.toString());
-
-                              // portName = value;
-                            });
-                          },
-                        ),
+            child: Column(
+              children: [
+                Container(
+                  margin: EdgeInsets.only(top: 40),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        "QR Code",
+                        style: TextStyle(fontSize: 16, color: Colors.white),
                       ),
+                      Text(
+                        "123654789512",
+                        style: TextStyle(fontSize: 16, color: Colors.white),
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(height: 10),
+                Container(
+                  width: size.width * 0.25,
+                  height: size.height * 0.13,
+                  padding: EdgeInsets.only(left: 10, top: 10, right: 10),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(10),
+                    color: seconColor,
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            "KG",
+                            style: TextStyle(color: Colors.white),
+                          ),
+                          Container(
+                            width: size.width * 0.13,
+                            height: size.height * 0.04,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(10),
+                              color: fillColor,
+                            ),
+                            child: TextField(
+                              controller: _kgController,
+                              decoration: InputDecoration(
+                                  border: OutlineInputBorder(
+                                      borderSide: BorderSide.none)),
+                            ),
+                          )
+                        ],
+                      ),
+                      SizedBox(
+                        height: 10,
+                      ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            "G",
+                            style: TextStyle(color: Colors.white),
+                          ),
+                          Container(
+                            width: size.width * 0.13,
+                            height: size.height * 0.04,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(10),
+                              color: fillColor,
+                            ),
+                            child: TextField(
+                              controller: _gController,
+                              decoration: InputDecoration(
+                                  border: OutlineInputBorder(
+                                      borderSide: BorderSide.none)),
+                            ),
+                          )
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(
+                  height: 5,
+                ),
+                Container(
+                  width: size.width * 0.25,
+                  height: size.height * 0.25,
+                  padding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                  decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(10),
+                      color: seconColor),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              "Width",
+                              style: TextStyle(color: Colors.white),
+                            ),
+                            Container(
+                              width: size.width * 0.13,
+                              height: size.height * 0.04,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(10),
+                                color: fillColor,
+                              ),
+                              child: TextField(
+                                controller: _widthController,
+                                decoration: InputDecoration(
+                                    border: OutlineInputBorder(
+                                        borderSide: BorderSide.none)),
+                              ),
+                            )
+                          ],
+                        ),
+                        SizedBox(
+                          height: 10,
+                        ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              "Length",
+                              style: TextStyle(color: Colors.white),
+                            ),
+                            Container(
+                              width: size.width * 0.13,
+                              height: size.height * 0.04,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(10),
+                                color: fillColor,
+                              ),
+                              child: TextField(
+                                controller: _lengthController,
+                                decoration: InputDecoration(
+                                    border: OutlineInputBorder(
+                                        borderSide: BorderSide.none)),
+                              ),
+                            )
+                          ],
+                        ),
+                        SizedBox(
+                          height: 10,
+                        ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              "Height",
+                              style: TextStyle(color: Colors.white),
+                            ),
+                            Container(
+                              width: size.width * 0.13,
+                              height: size.height * 0.04,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(10),
+                                color: fillColor,
+                              ),
+                              child: TextField(
+                                controller: _heightController,
+                                decoration: InputDecoration(
+                                    border: OutlineInputBorder(
+                                        borderSide: BorderSide.none)),
+                              ),
+                            )
+                          ],
+                        ),
+                        SizedBox(
+                          height: 10,
+                        ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              "Cubit",
+                              style: TextStyle(color: Colors.white),
+                            ),
+                            Container(
+                              width: size.width * 0.13,
+                              height: size.height * 0.04,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(10),
+                                color: fillColor,
+                              ),
+                              child: TextField(
+                                controller: _cubitController,
+                                decoration: InputDecoration(
+                                    border: OutlineInputBorder(
+                                        borderSide: BorderSide.none)),
+                              ),
+                            )
+                          ],
+                        ),
+                      ],
                     ),
                   ),
-                ],
+                ),
+              ],
+            ),
+          ),
+          Positioned(
+            top: size.height * 0,
+            right: size.width * 0,
+            child: Container(
+              height: 30,
+              width: 120,
+              decoration: BoxDecoration(
+                  color: fillColor,
+                  borderRadius:
+                      BorderRadius.only(topRight: Radius.circular(20))),
+              padding: EdgeInsets.symmetric(horizontal: 5),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: allport,
+                  isExpanded: true,
+                  hint: Text(
+                    'Choose Port',
+                    style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
+                  ),
+                  elevation: 0,
+                  iconSize: 25,
+                  icon: const Icon(
+                    Icons.arrow_drop_down,
+                    color: Colors.black54,
+                  ),
+                  dropdownColor: Colors.white,
+                  items: allports.map<DropdownMenuItem<String>>((String value) {
+                    return DropdownMenuItem<String>(
+                      value: value,
+                      child: Text(value),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    setState(() {
+                      allport = value;
+                    });
+                    getData(value.toString());
+                  },
+                ),
               ),
             ),
-          )
-          // Container(
-          //   width: size.width * 0.25,
-          //   height: size.height * 0.5,
-          //   padding: EdgeInsets.symmetric(horizontal: 10),
-          //   decoration: BoxDecoration(
-          //     borderRadius: BorderRadius.circular(20),
-          //     color: mainColor,
-          //   ),
-          //   child: Column(
-          //     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          //     children: [
-          //       Row(
-          //         mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          //         children: [
-          //           Text(
-          //             "QR Code",
-          //             style: TextStyle(fontSize: 16, color: Colors.white),
-          //           ),
-          //           Text(
-          //             "123654789512",
-          //             style: TextStyle(fontSize: 16, color: Colors.white),
-          //           ),
-          //         ],
-          //       ),
-          //       SizedBox(height: 10),
-          //       Container(
-          //         width: size.width * 0.25,
-          //         height: size.height * 0.13,
-          //         padding: EdgeInsets.only(left: 10, top: 10, right: 10),
-          //         decoration: BoxDecoration(
-          //           borderRadius: BorderRadius.circular(10),
-          //           color: seconColor,
-          //         ),
-          //         child: Column(
-          //           children: [
-          //             Row(
-          //               mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          //               children: [
-          //                 Text(
-          //                   "KG",
-          //                   style: TextStyle(color: Colors.white),
-          //                 ),
-          //                 Container(
-          //                   width: size.width * 0.13,
-          //                   height: size.height * 0.04,
-          //                   decoration: BoxDecoration(
-          //                     borderRadius: BorderRadius.circular(10),
-          //                     color: fillColor,
-          //                   ),
-          //                   child: TextField(
-          //                     controller: _kgController,
-          //                     decoration: InputDecoration(
-          //                         border: OutlineInputBorder(
-          //                             borderSide: BorderSide.none)),
-          //                   ),
-          //                 )
-          //               ],
-          //             ),
-          //             SizedBox(
-          //               height: 10,
-          //             ),
-          //             Row(
-          //               mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          //               children: [
-          //                 Text(
-          //                   "G",
-          //                   style: TextStyle(color: Colors.white),
-          //                 ),
-          //                 Container(
-          //                   width: size.width * 0.13,
-          //                   height: size.height * 0.04,
-          //                   decoration: BoxDecoration(
-          //                     borderRadius: BorderRadius.circular(10),
-          //                     color: fillColor,
-          //                   ),
-          //                   child: TextField(
-          //                     controller: _gController,
-          //                     decoration: InputDecoration(
-          //                         border: OutlineInputBorder(
-          //                             borderSide: BorderSide.none)),
-          //                   ),
-          //                 )
-          //               ],
-          //             ),
-          //           ],
-          //         ),
-          //       ),
-          //       SizedBox(
-          //         height: 5,
-          //       ),
-          //       Container(
-          //         width: size.width * 0.25,
-          //         height: size.height * 0.25,
-          //         padding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-          //         decoration: BoxDecoration(
-          //             borderRadius: BorderRadius.circular(10),
-          //             color: seconColor),
-          //         child: SingleChildScrollView(
-          //           child: Column(
-          //             children: [
-          //               Row(
-          //                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          //                 children: [
-          //                   Text(
-          //                     "Width",
-          //                     style: TextStyle(color: Colors.white),
-          //                   ),
-          //                   Container(
-          //                     width: size.width * 0.13,
-          //                     height: size.height * 0.04,
-          //                     decoration: BoxDecoration(
-          //                       borderRadius: BorderRadius.circular(10),
-          //                       color: fillColor,
-          //                     ),
-          //                     child: TextField(
-          //                       controller: _widthController,
-          //                       decoration: InputDecoration(
-          //                           border: OutlineInputBorder(
-          //                               borderSide: BorderSide.none)),
-          //                     ),
-          //                   )
-          //                 ],
-          //               ),
-          //               SizedBox(
-          //                 height: 10,
-          //               ),
-          //               Row(
-          //                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          //                 children: [
-          //                   Text(
-          //                     "Length",
-          //                     style: TextStyle(color: Colors.white),
-          //                   ),
-          //                   Container(
-          //                     width: size.width * 0.13,
-          //                     height: size.height * 0.04,
-          //                     decoration: BoxDecoration(
-          //                       borderRadius: BorderRadius.circular(10),
-          //                       color: fillColor,
-          //                     ),
-          //                     child: TextField(
-          //                       controller: _lengthController,
-          //                       decoration: InputDecoration(
-          //                           border: OutlineInputBorder(
-          //                               borderSide: BorderSide.none)),
-          //                     ),
-          //                   )
-          //                 ],
-          //               ),
-          //               SizedBox(
-          //                 height: 10,
-          //               ),
-          //               Row(
-          //                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          //                 children: [
-          //                   Text(
-          //                     "Height",
-          //                     style: TextStyle(color: Colors.white),
-          //                   ),
-          //                   Container(
-          //                     width: size.width * 0.13,
-          //                     height: size.height * 0.04,
-          //                     decoration: BoxDecoration(
-          //                       borderRadius: BorderRadius.circular(10),
-          //                       color: fillColor,
-          //                     ),
-          //                     child: TextField(
-          //                       controller: _heightController,
-          //                       decoration: InputDecoration(
-          //                           border: OutlineInputBorder(
-          //                               borderSide: BorderSide.none)),
-          //                     ),
-          //                   )
-          //                 ],
-          //               ),
-          //               SizedBox(
-          //                 height: 10,
-          //               ),
-          //               Row(
-          //                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          //                 children: [
-          //                   Text(
-          //                     "Cubit",
-          //                     style: TextStyle(color: Colors.white),
-          //                   ),
-          //                   Container(
-          //                     width: size.width * 0.13,
-          //                     height: size.height * 0.04,
-          //                     decoration: BoxDecoration(
-          //                       borderRadius: BorderRadius.circular(10),
-          //                       color: fillColor,
-          //                     ),
-          //                     child: TextField(
-          //                       controller: _cubitController,
-          //                       decoration: InputDecoration(
-          //                           border: OutlineInputBorder(
-          //                               borderSide: BorderSide.none)),
-          //                     ),
-          //                   )
-          //                 ],
-          //               ),
-          //             ],
-          //           ),
-          //         ),
-          //       ),
-          //     ],
-          //   ),
-          // )
+          ),
         ],
       ),
     );
   }
 
-  Container cameracontainer(Size size) {
+  Container container(Size size) {
     return Container(
-      margin: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-      width: size.width * 0.75,
-      height: size.height * 0.3,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Stack(
-            children: [
-              Container(
-                width: size.width * 0.24,
-                height: size.height * 0.3,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(20),
-                  color: mainColor,
-                ),
-                child: Center(
-                  child: Text(
-                    "Main Camera",
-                    style: TextStyle(fontSize: 20, color: Colors.white),
-                  ),
-                ),
-              ),
-              Positioned(
-                top: size.height * 0,
-                right: size.width * 0,
-                child: Container(
-                  height: 30,
-                  width: 120,
-                  decoration: BoxDecoration(
-                      color: fillColor,
-                      borderRadius:
-                          BorderRadius.only(topRight: Radius.circular(20))),
-                  padding: EdgeInsets.symmetric(horizontal: 5),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      value: allport,
-                      isExpanded: true,
-                      hint: Text(
-                        'Choose Port',
-                        style: TextStyle(
-                            fontSize: 14, color: Colors.grey.shade500),
-                      ),
-                      elevation: 0,
-                      iconSize: 25,
-                      icon: const Icon(
-                        Icons.arrow_drop_down,
-                        color: Colors.black54,
-                      ),
-                      dropdownColor: Colors.white,
-                      items: allports.map(allserialports).toList(),
-                      onChanged: (value) => setState(() => allport = value),
+      width: size.width * 0.7,
+      height: size.width * 0.2,
+      padding: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20), color: seconColor),
+      child: SingleChildScrollView(
+        child: Row(
+          children: [
+            Column(
+              children: [
+                Row(
+                  children: [
+                    Checkbox(
+                      activeColor: mainColor,
+                      checkColor: Colors.white,
+                      value: _isChecked,
+                      onChanged: (newValue) {
+                        setState(() {
+                          _isChecked = newValue!;
+                        });
+                      },
                     ),
-                  ),
+                    Container(
+                        width: size.width * 0.3,
+                        height: size.height * 0.03,
+                        padding: EdgeInsets.symmetric(horizontal: 10),
+                        color: Colors.white,
+                        child: Text("Data")),
+                  ],
                 ),
-              ),
-            ],
-          ),
-          Stack(
-            children: [
-              Container(
-                width: size.width * 0.24,
-                height: size.height * 0.3,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(20),
-                  color: mainColor,
-                ),
-                child: Center(
-                  child: Text(
-                    "Selfie Camera",
-                    style: TextStyle(fontSize: 20, color: Colors.white),
-                  ),
-                ),
-              ),
-              Positioned(
-                top: 0,
-                right: 0,
-                child: Container(
-                  height: 30,
-                  width: 120,
-                  decoration: BoxDecoration(
-                      color: fillColor,
-                      borderRadius:
-                          BorderRadius.only(topRight: Radius.circular(20))),
-                  padding: EdgeInsets.symmetric(horizontal: 5),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      value: allport1,
-                      isExpanded: true,
-                      hint: Text(
-                        'Choose Port',
-                        style: TextStyle(
-                            fontSize: 14, color: Colors.grey.shade500),
-                      ),
-                      elevation: 0,
-                      iconSize: 25,
-                      icon: const Icon(
-                        Icons.arrow_drop_down,
-                        color: Colors.black54,
-                      ),
-                      dropdownColor: Colors.white,
-                      items: allports.map(allserialports).toList(),
-                      onChanged: (value) => setState(() => allport1 = value),
+                SizedBox(height: 1),
+                Row(
+                  children: [
+                    Checkbox(
+                      activeColor: mainColor,
+                      checkColor: Colors.white,
+                      value: _isChecked1,
+                      onChanged: (newValue) {
+                        setState(() {
+                          _isChecked1 = newValue!;
+                        });
+                      },
                     ),
-                  ),
+                    Container(
+                        width: size.width * 0.3,
+                        height: size.height * 0.03,
+                        padding: EdgeInsets.symmetric(horizontal: 10),
+                        color: Colors.white,
+                        child: Text("Data1"))
+                  ],
                 ),
-              ),
-            ],
-          ),
-          Stack(
-            children: [
-              Container(
-                width: size.width * 0.24,
-                height: size.height * 0.3,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(20),
-                  color: mainColor,
-                ),
-                child: Center(
-                  child: Text(
-                    "Item Image",
-                    style: TextStyle(fontSize: 20, color: Colors.white),
-                  ),
-                ),
-              ),
-              Positioned(
-                top: 0,
-                right: 0,
-                child: Container(
-                  height: 30,
-                  width: 120,
-                  decoration: BoxDecoration(
-                      color: fillColor,
-                      borderRadius:
-                          BorderRadius.only(topRight: Radius.circular(20))),
-                  padding: EdgeInsets.symmetric(horizontal: 5),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      value: allport2,
-                      isExpanded: true,
-                      hint: Text(
-                        'Choose Port',
-                        style: TextStyle(
-                            fontSize: 14, color: Colors.grey.shade500),
-                      ),
-                      elevation: 0,
-                      iconSize: 25,
-                      icon: const Icon(
-                        Icons.arrow_drop_down,
-                        color: Colors.black54,
-                      ),
-                      dropdownColor: Colors.white,
-                      items: allports.map(allserialports).toList(),
-                      onChanged: (value) => setState(() => allport2 = value),
+                SizedBox(height: 1),
+                Row(
+                  children: [
+                    Checkbox(
+                      activeColor: mainColor,
+                      checkColor: Colors.white,
+                      value: _isChecked2,
+                      onChanged: (newValue) {
+                        setState(() {
+                          _isChecked2 = newValue!;
+                        });
+                      },
                     ),
-                  ),
+                    Container(
+                        width: size.width * 0.3,
+                        height: size.height * 0.03,
+                        padding: EdgeInsets.symmetric(horizontal: 10),
+                        color: Colors.white,
+                        child: Text("Data2"))
+                  ],
                 ),
-              )
-            ],
-          ),
-        ],
+                SizedBox(height: 1),
+                Row(
+                  children: [
+                    Checkbox(
+                      activeColor: mainColor,
+                      checkColor: Colors.white,
+                      value: _isChecked3,
+                      onChanged: (newValue) {
+                        setState(() {
+                          _isChecked3 = newValue!;
+                        });
+                      },
+                    ),
+                    Container(
+                        width: size.width * 0.3,
+                        height: size.height * 0.03,
+                        padding: EdgeInsets.symmetric(horizontal: 10),
+                        color: Colors.white,
+                        child: Text("Data3"))
+                  ],
+                ),
+              ],
+            ),
+            SizedBox(
+              width: 10,
+            ),
+            Container(
+              width: 300,
+              height: 500,
+              child: ListView.builder(
+                itemCount: getdatalist.length,
+                itemBuilder: (BuildContext context, int index) {
+                  return ListTile(
+                    title: Text(getdatalist[index].toString()),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
